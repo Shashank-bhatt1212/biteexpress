@@ -1,0 +1,892 @@
+{
+  "info": {
+    "name": "BiteExpress API",
+    "description": "Restaurant discovery REST API (Spring Boot + MongoDB).\n\nBase URL is controlled by the `baseUrl` collection variable (default http://localhost:8080).\n\nFolders:\n- Happy Path: expected successful usage of every endpoint.\n- Boundary & Error Cases: validation failures, not-found, bad params, and edge inputs.\n\nEndpoints:\n- POST   /v1/restaurants          create a restaurant\n- GET    /v1/restaurants/{id}     get one by Mongo id\n- GET    /v1/restaurants          list with filtering + sorting + pagination (+ distance when lat/lng given)\n- GET    /v1/restaurants/search   everything list does, plus a natural-language query string (q)\n\nDistance is returned in METERS and only when both lat and lng are supplied.\nThe `createdId` collection variable is auto-populated by the 'Create restaurant (happy)' request's test script, so the Get-by-id requests can reuse it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "createdId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Happy Path",
+      "item": [
+        {
+          "name": "Create restaurant (happy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Location header present', function () {",
+                  "    pm.response.to.have.header('Location');",
+                  "});",
+                  "var body = pm.response.json();",
+                  "pm.test('response has an id', function () {",
+                  "    pm.expect(body.id).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Country resolved from countryCode', function () {",
+                  "    pm.expect(body.Country).to.eql('India');",
+                  "});",
+                  "if (body && body.id) {",
+                  "    pm.collectionVariables.set('createdId', body.id);",
+                  "    console.log('Saved createdId =', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000001,\n  \"name\": \"Test Kitchen Connaught Place\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"12, Inner Circle, Connaught Place, New Delhi\",\n  \"locality\": \"Connaught Place\",\n  \"localityVerbose\": \"Connaught Place, New Delhi\",\n  \"latitude\": 28.6315,\n  \"longitude\": 77.2167,\n  \"cuisines\": [\"North Indian\", \"Chinese\"],\n  \"averageCostForTwo\": 1200,\n  \"currency\": \"Rs.\",\n  \"priceRange\": 3,\n  \"hasTableBooking\": true,\n  \"hasOnlineDelivery\": false,\n  \"isDeliveringNow\": false,\n  \"aggregateRating\": 4.3,\n  \"ratingText\": \"Very Good\",\n  \"ratingColor\": \"5BA829\",\n  \"votes\": 512\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "Create a restaurant with a full, valid body. On success returns 201 with a Location header and the created entity. The test script stores the returned `id` into the `createdId` collection variable."
+          }
+        },
+        {
+          "name": "Create restaurant - minimal required fields (happy)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000002,\n  \"name\": \"Minimal Cafe\",\n  \"countryCode\": 1,\n  \"city\": \"Gurgaon\",\n  \"address\": \"Sector 29, Gurgaon\",\n  \"latitude\": 28.4595,\n  \"longitude\": 77.0266,\n  \"cuisines\": [\"Cafe\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "Only the @NotNull/@NotBlank/@NotEmpty required fields: restaurantId, name, countryCode, city, address, latitude, longitude, cuisines. All optional fields omitted. Expected 201."
+          }
+        },
+        {
+          "name": "Get restaurant by id (happy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('id matches createdId', function () {",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('createdId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/{{createdId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "{{createdId}}"]
+            },
+            "description": "Fetch the restaurant created by 'Create restaurant (happy)'. Run that request first so `createdId` is populated. Expected 200 with full details."
+          }
+        },
+        {
+          "name": "List - default (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": []
+            },
+            "description": "No filters. Returns a paged response (default size 20, best-rated first). Response shape: { content, page, size, totalElements, totalPages }."
+          }
+        },
+        {
+          "name": "List - filter by city (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?city=New Delhi&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "city", "value": "New Delhi" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "City is an anchored, case-insensitive exact match (^New Delhi$). Expected 200."
+          }
+        },
+        {
+          "name": "List - filter by name substring (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?name=cafe&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "name", "value": "cafe" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "Name is an unanchored, case-insensitive substring match. Expected 200."
+          }
+        },
+        {
+          "name": "List - minRating + cuisines (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?minRating=4.0&cuisines=North Indian&cuisines=Chinese&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "minRating", "value": "4.0" },
+                { "key": "cuisines", "value": "North Indian" },
+                { "key": "cuisines", "value": "Chinese" },
+                { "key": "size", "value": "10" }
+              ]
+            },
+            "description": "aggregateRating >= 4.0 AND serves ANY of the listed cuisines (OR semantics). Repeat the `cuisines` param to pass multiple values. Expected 200."
+          }
+        },
+        {
+          "name": "List - sort by rating desc (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?sort=rating&direction=desc&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "sort", "value": "rating" },
+                { "key": "direction", "value": "desc" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "Valid sort values: name, rating, distance. Valid directions: asc, desc. Expected 200."
+          }
+        },
+        {
+          "name": "List - sort by name asc (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?sort=name&direction=asc&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "sort", "value": "name" },
+                { "key": "direction", "value": "asc" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "Alphabetical listing. Expected 200."
+          }
+        },
+        {
+          "name": "List - distance within radius (happy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var content = pm.response.json().content;",
+                  "pm.test('Distance field present on geo results', function () {",
+                  "    if (content.length > 0) {",
+                  "        pm.expect(content[0]).to.have.property('Distance');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?lat=28.6139&lng=77.2090&radius=5000&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "lat", "value": "28.6139" },
+                { "key": "lng", "value": "77.2090" },
+                { "key": "radius", "value": "5000" },
+                { "key": "size", "value": "10" }
+              ]
+            },
+            "description": "Both lat and lng switch on the $geoNear distance path. radius is in METERS (5000 = 5km). Each result includes a `Distance` field (meters). When lat/lng are present and no sort is given, results are nearest-first. Expected 200."
+          }
+        },
+        {
+          "name": "List - distance, nearest first explicit sort (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?lat=28.6139&lng=77.2090&sort=distance&direction=asc&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "lat", "value": "28.6139" },
+                { "key": "lng", "value": "77.2090" },
+                { "key": "sort", "value": "distance" },
+                { "key": "direction", "value": "asc" },
+                { "key": "size", "value": "10" }
+              ]
+            },
+            "description": "sort=distance is valid because lat & lng are present. No radius = no distance cap. Expected 200."
+          }
+        },
+        {
+          "name": "List - pagination page 2 (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?page=1&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "page is 0-based, so page=1 is the second page. Expected 200 with page=1 in the response."
+          }
+        },
+        {
+          "name": "Search - NL city + cuisine (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=Best restaurants in Gurgaon with South Indian Food",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "Best restaurants in Gurgaon with South Indian Food" }
+              ]
+            },
+            "description": "NL parser extracts city=Gurgaon and cuisine=South Indian, then applies the same listing machinery. Expected 200."
+          }
+        },
+        {
+          "name": "Search - NL price cap (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=Restaurants in Gurgaon under Rs. 1000 for two",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "Restaurants in Gurgaon under Rs. 1000 for two" }
+              ]
+            },
+            "description": "NL parser extracts city=Gurgaon and maxCostForTwo=1000 (averageCostForTwo <= 1000). Expected 200."
+          }
+        },
+        {
+          "name": "Search - NL nearest without coords (happy, rating fallback)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=Nearest place that serves Vada Pav",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "Nearest place that serves Vada Pav" }
+              ]
+            },
+            "description": "'Nearest' intent detected but no lat/lng supplied, so the service gracefully falls back to rating-desc sort (NOT a 400) while still filtering on the Vada Pav keyword. Expected 200."
+          }
+        },
+        {
+          "name": "Search - NL nearest WITH coords (happy, true distance)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=Nearest cafe&lat=28.6139&lng=77.2090",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "Nearest cafe" },
+                { "key": "lat", "value": "28.6139" },
+                { "key": "lng", "value": "77.2090" }
+              ]
+            },
+            "description": "'Nearest' intent + coordinates supplied => real distance sort via $geoNear, Distance field populated. Expected 200."
+          }
+        },
+        {
+          "name": "Search - NL + structured override (happy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=restaurants in Gurgaon&city=New Delhi&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "restaurants in Gurgaon" },
+                { "key": "city", "value": "New Delhi" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "Explicit structured params take precedence over parsed NL values. Here the structured city=New Delhi overrides the parsed city=Gurgaon. Expected 200 with New Delhi results."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Boundary & Error Cases",
+      "item": [
+        {
+          "name": "Create - missing required fields (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('has fieldErrors', function () {",
+                  "    pm.expect(pm.response.json().fieldErrors).to.be.an('array').that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"New Delhi\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "Omits restaurantId, name, countryCode, address, latitude, longitude, cuisines. Expected 400 with a fieldErrors array naming each violated field."
+          }
+        },
+        {
+          "name": "Create - blank name (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000010,\n  \"name\": \"   \",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "@NotBlank name is whitespace only. Expected 400."
+          }
+        },
+        {
+          "name": "Create - empty cuisines list (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000011,\n  \"name\": \"No Cuisine Diner\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": 77.2,\n  \"cuisines\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "@NotEmpty cuisines is an empty array. Expected 400."
+          }
+        },
+        {
+          "name": "Create - latitude out of range (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000012,\n  \"name\": \"Off Grid\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 95.0,\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "latitude 95 exceeds the @DecimalMax(90) bound (valid range -90..90). Expected 400."
+          }
+        },
+        {
+          "name": "Create - longitude out of range (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000013,\n  \"name\": \"Off Grid 2\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": -200.0,\n  \"cuisines\": [\"Cafe\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "longitude -200 is below the @DecimalMin(-180) bound (valid range -180..180). Expected 400."
+          }
+        },
+        {
+          "name": "Create - aggregateRating above 5 (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000014,\n  \"name\": \"Over Rated\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"],\n  \"aggregateRating\": 6.5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "aggregateRating 6.5 exceeds @DecimalMax(5) (valid 0..5). Expected 400."
+          }
+        },
+        {
+          "name": "Create - priceRange out of range (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000015,\n  \"name\": \"Pricey\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"],\n  \"priceRange\": 9\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "priceRange must be @Min(1)..@Max(4). 9 is out of range. Expected 400."
+          }
+        },
+        {
+          "name": "Create - negative averageCostForTwo (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000016,\n  \"name\": \"Negative Cost\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": 28.6,\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"],\n  \"averageCostForTwo\": -50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "@PositiveOrZero averageCostForTwo rejects -50. Expected 400."
+          }
+        },
+        {
+          "name": "Create - malformed JSON (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000017,\n  \"name\": \"Broken\",\n"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "Truncated/unparseable JSON body. Expected 400 (HttpMessageNotReadable)."
+          }
+        },
+        {
+          "name": "Create - wrong type for latitude (400)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": 9000018,\n  \"name\": \"Type Mismatch\",\n  \"countryCode\": 1,\n  \"city\": \"New Delhi\",\n  \"address\": \"Somewhere\",\n  \"latitude\": \"not-a-number\",\n  \"longitude\": 77.2,\n  \"cuisines\": [\"Cafe\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"]
+            },
+            "description": "latitude is a string instead of a number. Expected 400 (JSON parse / type error)."
+          }
+        },
+        {
+          "name": "Get by id - not found (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', function () { pm.response.to.have.status(404); });",
+                  "pm.test('error body shape', function () {",
+                  "    var b = pm.response.json();",
+                  "    pm.expect(b.status).to.eql(404);",
+                  "    pm.expect(b.path).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/000000000000000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "000000000000000000000000"]
+            },
+            "description": "A syntactically valid but non-existent Mongo ObjectId. Expected 404 with the standard error body (timestamp, status, error, message, path)."
+          }
+        },
+        {
+          "name": "Get by id - garbage id (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/not-a-real-id",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "not-a-real-id"]
+            },
+            "description": "Arbitrary non-ObjectId string. Spring Data Mongo String id lookup returns empty => 404."
+          }
+        },
+        {
+          "name": "List - sort=distance without coords (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('message mentions lat/lng', function () {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('lat');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?sort=distance",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "sort", "value": "distance" } ]
+            },
+            "description": "sort=distance requires both lat and lng. Without them the service throws InvalidQueryException. Expected 400."
+          }
+        },
+        {
+          "name": "List - invalid sort value (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?sort=price",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "sort", "value": "price" } ]
+            },
+            "description": "sort must be one of name, rating, distance. 'price' is rejected. Expected 400."
+          }
+        },
+        {
+          "name": "List - invalid direction value (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?sort=rating&direction=sideways",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "sort", "value": "rating" },
+                { "key": "direction", "value": "sideways" }
+              ]
+            },
+            "description": "direction must be asc or desc. Expected 400."
+          }
+        },
+        {
+          "name": "List - negative page (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?page=-1",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "page", "value": "-1" } ]
+            },
+            "description": "page must be zero or greater. Expected 400."
+          }
+        },
+        {
+          "name": "List - minRating above 5 (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?minRating=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "minRating", "value": "7" } ]
+            },
+            "description": "minRating must be between 0.0 and 5.0. Expected 400."
+          }
+        },
+        {
+          "name": "List - minRating below 0 (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?minRating=-1",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "minRating", "value": "-1" } ]
+            },
+            "description": "minRating below the 0.0 floor. Expected 400."
+          }
+        },
+        {
+          "name": "List - negative radius (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?lat=28.6&lng=77.2&radius=-100",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "lat", "value": "28.6" },
+                { "key": "lng", "value": "77.2" },
+                { "key": "radius", "value": "-100" }
+              ]
+            },
+            "description": "radius must be greater than 0. A negative radius returns a clean 400 (not a 500)."
+          }
+        },
+        {
+          "name": "List - radius zero (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?lat=28.6&lng=77.2&radius=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "lat", "value": "28.6" },
+                { "key": "lng", "value": "77.2" },
+                { "key": "radius", "value": "0" }
+              ]
+            },
+            "description": "radius=0 is not > 0. Expected 400."
+          }
+        },
+        {
+          "name": "List - non-numeric minRating type mismatch (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?minRating=high",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "minRating", "value": "high" } ]
+            },
+            "description": "minRating is declared Double; 'high' cannot bind => MethodArgumentTypeMismatchException. Expected 400 naming the parameter."
+          }
+        },
+        {
+          "name": "List - lat without lng (no distance, 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?lat=28.6&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [
+                { "key": "lat", "value": "28.6" },
+                { "key": "size", "value": "5" }
+              ]
+            },
+            "description": "Distance path needs BOTH lat and lng. With only lat, the geo path is not triggered; this behaves as a plain list (no Distance field). Expected 200 (documented edge behavior, not an error)."
+          }
+        },
+        {
+          "name": "List - size over cap (clamped, 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?size=1000",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "size", "value": "1000" } ]
+            },
+            "description": "size above the hard cap of 100 is silently clamped to 100 (not an error). Expected 200 with size=100 in the response."
+          }
+        },
+        {
+          "name": "List - size zero (defaults, 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?size=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "size", "value": "0" } ]
+            },
+            "description": "size <= 0 falls back to the default page size of 20. Expected 200 with size=20."
+          }
+        },
+        {
+          "name": "List - no matches (empty page, 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants?city=Atlantis",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants"],
+              "query": [ { "key": "city", "value": "Atlantis" } ]
+            },
+            "description": "A city that does not exist in the data. Expected 200 with an empty content array and totalElements=0."
+          }
+        },
+        {
+          "name": "Search - missing q (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"]
+            },
+            "description": "q is a required @NotBlank request param. Omitting it entirely => missing-parameter 400."
+          }
+        },
+        {
+          "name": "Search - blank q (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=   ",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [ { "key": "q", "value": "   " } ]
+            },
+            "description": "q is whitespace only, violating @NotBlank => 400."
+          }
+        },
+        {
+          "name": "Search - gibberish q (200, no filters parsed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=qwerty zxcvb asdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [ { "key": "q", "value": "qwerty zxcvb asdf" } ]
+            },
+            "description": "Query with no recognizable city/cuisine/price/nearest intent. Parser extracts nothing, so it behaves like an unfiltered list. Expected 200 (not an error)."
+          }
+        },
+        {
+          "name": "Search - sort=distance via param without coords (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/restaurants/search?q=good food&sort=distance",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "restaurants", "search"],
+              "query": [
+                { "key": "q", "value": "good food" },
+                { "key": "sort", "value": "distance" }
+              ]
+            },
+            "description": "Explicit sort=distance without lat/lng is an error even on /search (same rule as the list endpoint). Expected 400. (Contrast with the NL 'nearest' happy case, which soft-falls back to rating.)"
+          }
+        }
+      ]
+    }
+  ]
+}

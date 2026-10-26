@@ -1,0 +1,6 @@
+.agents/
+archive/
+target/
+.idea/
+.mvn/wrapper/maven-wrapper.jar
+*.pdf
